@@ -65,9 +65,9 @@ void getRollPitch(out double roll, out double pitch) {
 float trim(float val,float th) {if(val<-th) return -th; if(val>th) return th; return val;}
 
 void updateGyro(float targetRoll = 0.0f, float targetPitch = 0.0f, float dt = 0.016f) {
-	float kP = 0.5f;
-	float kI = 0.05f;
-	float kD = 5.0f;
+	float kP = 1.0f;
+	float kI = 0.02f;
+	float kD = 1.0f;
 	
 	float lastR = 0.0f;
 	float lastP = 0.0f;
