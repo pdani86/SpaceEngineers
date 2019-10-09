@@ -14,6 +14,7 @@ void printVector(IMyTextPanel panel, string prefix, Vector3D v)
 IMyRemoteControl rc = null;
 IMyGyro gyro = null;
 IMyTextPanel lcd = null;
+List<IMyThrust> thrusterList = new List<IMyThrust>();
 
 void printVelocities()
 {
@@ -30,7 +31,7 @@ void printOrientation()
 	printVector(lcd, "R", pR);
 	printVector(lcd, "U", pU);
 	double roll, pitch;
-	getRollPitch(out roll, out pitch);
+	getRollPitchGravity(out roll, out pitch);
 	roll *= 180.0/Math.PI;
 	pitch *= 180.0/Math.PI;
 	lcd.WriteText("roll, pitch: " + roll.ToString("0.000") + ", " + pitch.ToString("0.000") + "\r\n",true);
@@ -49,25 +50,31 @@ void getOrientationVectors(out  Vector3D F, out Vector3D U, out Vector3D R) {
     U = pU;
 }
 
-void getRollPitch(out double roll, out double pitch) {
+
+void getRollPitch(out double roll, out double pitch,Vector3D vRef) {
 	Vector3D F,U,R;
 	getOrientationVectors(out F,out U,out R);
-	var grav = rc.GetTotalGravity();
-	var gravUpUnit = -1*grav;
-	gravUpUnit.Normalize();
+	vRef.Normalize();
 
-	double cosFG = F.Dot(gravUpUnit);
-	double cosRG = R.Dot(gravUpUnit);
+	double cosFG = F.Dot(vRef);
+	double cosRG = R.Dot(vRef);
 	pitch = Math.Acos(cosFG) - Math.PI/2.0;
 	roll = Math.Acos(cosRG) - Math.PI/2.0;
 }
 
+void getRollPitchGravity(out double roll, out double pitch) {
+	var grav = rc.GetTotalGravity();
+	var gravUpUnit = -1*grav;
+	gravUpUnit.Normalize();
+	getRollPitch(out roll, out pitch,gravUpUnit);
+}
+
 float trim(float val,float th) {if(val<-th) return -th; if(val>th) return th; return val;}
 
-void updateGyro(float targetRoll = 0.0f, float targetPitch = 0.0f, float dt = 0.016f) {
-	float kP = 1.0f;
-	float kI = 0.02f;
-	float kD = 1.0f;
+void updateGyro(Vector3D vRef, float dt = 0.016f, float targetRoll = 0.0f, float targetPitch = 0.0f) {
+	float kP = 2.0f;
+	float kI = 0.05f;
+	float kD = 5.0f;
 	
 	float lastR = 0.0f;
 	float lastP = 0.0f;
@@ -86,7 +93,7 @@ void updateGyro(float targetRoll = 0.0f, float targetPitch = 0.0f, float dt = 0.
 	}
 
 	double _roll, _pitch;
-	getRollPitch(out _roll, out _pitch);
+	getRollPitch(out _roll, out _pitch, vRef);
 	float roll = (float)_roll; float pitch = (float)_pitch;
 
 	float eR = targetRoll-(float)roll;
@@ -101,8 +108,8 @@ void updateGyro(float targetRoll = 0.0f, float targetPitch = 0.0f, float dt = 0.
 	float dR = (eR - eR_old)/dt;
 	float dP = (eP - eP_old)/dt;
 
-	integR = trim(integR,4.0f);
-	integP = trim(integP,4.0f);
+	integR = trim(integR,2.0f);
+	integP = trim(integP,2.0f);
 
 	string storeInfo = roll.ToString() + "," + pitch.ToString() + ",0.0," + integR + "," + integP + ",0.0";
 	gyro.CustomData = storeInfo;
@@ -110,6 +117,7 @@ void updateGyro(float targetRoll = 0.0f, float targetPitch = 0.0f, float dt = 0.
 	float controlR = kP*eR + kD*dR + kI*integR;
 	float controlP = kP*eP + kD*dP + kI*integP;
 	controlP *= -1;
+	controlR *= -1;
 	//controlR = trim(controlR,10.0f);
 	//controlP = trim(controlP,10.0f);
 	gyro.Roll = controlR;
@@ -124,6 +132,39 @@ void updateGyro(float targetRoll = 0.0f, float targetPitch = 0.0f, float dt = 0.
 	}
 }
 
+void updateToTarget(Vector3D targetPos)
+{
+	var grav = rc.GetTotalGravity();
+	var gravUpUnit = -1*grav;
+	gravUpUnit.Normalize();
+	
+	var v_av = rc.GetShipVelocities();
+	var v = v_av.LinearVelocity;
+	var vTarget = targetPos - rc.GetPosition();
+	
+	double targetDist = vTarget.Length();
+	double h = gravUpUnit.Dot(vTarget);
+	double surfaceDist = Math.Sqrt(targetDist*targetDist - h*h);
+	
+	
+	
+	vTarget.Normalize();
+	vTarget *= 100.0;
+	
+	vTarget += surfaceDist/100 * gravUpUnit;
+	
+	var vDiff = vTarget - v;
+	var vRef = vDiff;
+	
+	GridTerminalSystem.GetBlocksOfType<IMyThrust>(thrusterList);
+
+	for(int i=0;i<thrusterList.Count;i++) {
+		thrusterList[i].ThrustOverridePercentage = 1.0f;
+	}
+	
+	updateGyro(vRef);
+}
+
 
 public void Main(string argument, UpdateType updateSource)
 {
@@ -133,6 +174,10 @@ public void Main(string argument, UpdateType updateSource)
 	lcd.WriteText("");
 	printVelocities();
 	printOrientation();
-	updateGyro();
+	updateToTarget(new Vector3D(54804.56,-27195.05,11812.88));
+	//53538.92, -26695.54, 12130.25
+	
+	//rc.ControlThrusters = false;
+	//rc.DampenersOverride = false;
 }
 
