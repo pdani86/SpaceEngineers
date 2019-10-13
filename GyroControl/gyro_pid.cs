@@ -32,6 +32,7 @@ List<IMyThrust> thrusterUpList = new List<IMyThrust>();
 List<IMyRemoteControl> remoteControls = new List<IMyRemoteControl>();
 PID_Control pidRoll = new PID_Control();
 PID_Control pidPitch = new PID_Control();
+PID_Control pidYaw = new PID_Control();
 //PID_Control pidThrusters = new PID_Control();
 
 public Program() {
@@ -140,14 +141,22 @@ void updateToTarget(Vector3D targetPos)
 	var vRef = vDiff;
 	
 	// gyro control
-	var controlRP = calcGyroControl(vRef);
+	var controlRPY = calcGyroControl(vRef);
 	
-	controlRP *= 1.0;
+	controlRPY *= 1.0;
+	
+	bool bYawControl = true;
+	if(bYawControl) {
+		double yawSpeed = v_av.AngularVelocity.Dot(rc.WorldMatrix.Up);
+		controlRPY.Z = pidYaw.update(yawSpeed, 0.0);
+		controlRPY.Z *= -1.0;
+	}
 	
 	for(int i=0;i<gyros.Count;i++) {
 		gyros[i].GyroOverride = true;
-		gyros[i].Roll = (float)controlRP.X;
-		gyros[i].Pitch = (float)controlRP.Y;
+		gyros[i].Roll = (float)controlRPY.X;
+		gyros[i].Pitch = (float)controlRPY.Y;
+		gyros[i].Yaw = (float)controlRPY.Z;
 	}
 	
 	// thruster control
@@ -164,7 +173,7 @@ void updateToTarget(Vector3D targetPos)
 public void Main(string argument, UpdateType updateSource)
 {
 	
-	updateToTarget(new Vector3D(54804.56,-27195.05,11812.88));
+	updateToTarget(new Vector3D(54474.60,-26995.93,7156.81));
 	//53538.92, -26695.54, 12130.25
 	// Enemy_54474.60,-26995.93,7156.81
 	
