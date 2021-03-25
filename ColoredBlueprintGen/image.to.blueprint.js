@@ -57,8 +57,7 @@ function getBlockStr(x, y, hsv) {
 	return str;
 }
 
-
-function init() {
+function calc() {
 	var img = document.getElementById("img");
 	var canvas = document.getElementById("canvas");
 	var text = document.getElementById("textarea");
@@ -86,5 +85,9 @@ function init() {
 	
 	
 	textarea.value = preStr + textStr + postStr;
+}
+
+function init() {
+	//calc();
 }
 		

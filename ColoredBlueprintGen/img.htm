@@ -1,11 +1,32 @@
 <html>
 <head>
 	<script type="text/javascript" src="image.to.blueprint.js"></script>
+	<script>
+		function onFileChanged(event) {
+			console.log("onFileChanged");
+			const fileList = event.target.files;
+			if(fileList.length == 0) return;
+			var file = fileList[0];
+			//file.name;
+			file.size;
+			const reader = new FileReader();
+			reader.addEventListener('load', (event) => {
+				img.src = event.target.result;
+			});
+			reader.readAsDataURL(file);
+		}
+		
+		function btnClicked() {
+			calc();
+		}
+	</script>
 </head>
 <body onload="init()">
 	<img id="img" src="img.png" />
 	<canvas id="canvas"></canvas>
 	<textarea id = "textarea">
 	</textarea>
+	<input type="file" id="file-selector" onchange="onFileChanged(arguments[0])" >
+	<input type="button" onclick="btnClicked();" value="Calc" >
 </body>
 </html>
