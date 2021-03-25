@@ -35,10 +35,20 @@ function rgb2hsv (r, g, b) {
     };
 }
 
-var preStr = '<?xml version="1.0"?>' +
+var preStrSmall = '<?xml version="1.0"?>' +
 	'<Definitions xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
   '<ShipBlueprints><ShipBlueprint xsi:type="MyObjectBuilder_ShipBlueprintDefinition">' +
-  '<Id Type="MyObjectBuilder_ShipBlueprintDefinition" Subtype="Large Grid 8078" />' +
+  '<Id Type="MyObjectBuilder_ShipBlueprintDefinition" Subtype="-" />' +
+  '<DisplayName>---</DisplayName>' +
+  '<CubeGrids><CubeGrid><SubtypeName /><EntityId>108433617595477518</EntityId><PersistentFlags>CastShadows InScene</PersistentFlags>' +
+  '<PositionAndOrientation><Position x="0" y="0" z="0" /><Forward x="1" y="0" z="0" /><Up x="0" y="0" z="1" /><Orientation><X>1</X><Y>0</Y><Z>0</Z><W>1</W></Orientation></PositionAndOrientation>' +
+  '<LocalPositionAndOrientation xsi:nil="true" />' +
+  '<GridSizeEnum>Small</GridSizeEnum><CubeBlocks>' + '\r\n';
+  
+ var preStrLarge = '<?xml version="1.0"?>' +
+	'<Definitions xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
+  '<ShipBlueprints><ShipBlueprint xsi:type="MyObjectBuilder_ShipBlueprintDefinition">' +
+  '<Id Type="MyObjectBuilder_ShipBlueprintDefinition" Subtype="-" />' +
   '<DisplayName>---</DisplayName>' +
   '<CubeGrids><CubeGrid><SubtypeName /><EntityId>108433617595477518</EntityId><PersistentFlags>CastShadows InScene</PersistentFlags>' +
   '<PositionAndOrientation><Position x="0" y="0" z="0" /><Forward x="1" y="0" z="0" /><Up x="0" y="0" z="1" /><Orientation><X>1</X><Y>0</Y><Z>0</Z><W>1</W></Orientation></PositionAndOrientation>' +
@@ -47,10 +57,12 @@ var preStr = '<?xml version="1.0"?>' +
 
 var postStr = "</CubeBlocks></CubeGrid></CubeGrids></ShipBlueprint></ShipBlueprints></Definitions>" + '\r\n';
 
-function getBlockStr(x, y, hsv) {
+function getBlockStr(x, y, hsv, isSmall) {
 	var str = 
 	'<MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">' +
-              '<SubtypeName>LargeBlockArmorBlock</SubtypeName>' +
+			  '<SubtypeName>'+
+			  ((isSmall)?('SmallBlockArmorBlock'):('LargeBlockArmorBlock')) +
+			  '</SubtypeName>' +
               '<Min x="' + x + '" y="' + y +'" z="0" />' +
               '<ColorMaskHSV x="' + hsv.h +'" y="' + hsv.s + '" z="' + hsv.v + '" />' +
           '</MyObjectBuilder_CubeBlock>';
@@ -61,8 +73,12 @@ function calc() {
 	var img = document.getElementById("img");
 	var canvas = document.getElementById("canvas");
 	var text = document.getElementById("textarea");
+	//var gridTypeSel = document.getElementById("gridTypeSel");
+	var largeOption = document.getElementById("largeOpt");
 	var w = img.naturalWidth;
 	var h = img.naturalHeight;
+	
+	var largeGrid = largeOption.selected;
 	canvas.width = w;
 	canvas.height = h;
 	var ctx = canvas.getContext("2d");
@@ -78,12 +94,12 @@ function calc() {
 			var hsv = rgb2hsv(rgb[0], rgb[1], rgb[2]);
 			hsv.s -= 0.8;
 			hsv.v -= 0.45;
-			textStr += getBlockStr(x, y, hsv) + "\r\n";
+			textStr += getBlockStr(x, y, hsv, !largeGrid) + "\r\n";
 		}
 	}
 	ctx.putImageData(imgData, 0, 0);
 	
-	
+	var preStr = largeGrid ? preStrLarge : preStrSmall;
 	textarea.value = preStr + textStr + postStr;
 }
 

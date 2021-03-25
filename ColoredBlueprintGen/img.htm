@@ -26,7 +26,14 @@
 	<canvas id="canvas"></canvas>
 	<textarea id = "textarea">
 	</textarea>
+	<div>
+		<select id="gridTypeSel">
+		  <option value="0">Small</option>
+		  <option value="1" selected="selected" id="largeOpt">Large</option>
+		</select>
+	</div>
 	<input type="file" id="file-selector" onchange="onFileChanged(arguments[0])" >
 	<input type="button" onclick="btnClicked();" value="Calc" >
+	
 </body>
 </html>
