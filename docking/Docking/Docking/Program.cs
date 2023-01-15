@@ -57,6 +57,11 @@ class Program : MyGridProgram {
     {
         Runtime.UpdateFrequency = UpdateFrequency.Update1;
 
+        foreach (var thruster in thrusters)
+        {
+            thruster.ThrustOverride = 0.0f;
+        }
+
         pidRoll.kI = 0.0f;
         pidPitch.kI = 0.0f;
         pidYaw.kI = 0.0f;
@@ -169,14 +174,9 @@ class Program : MyGridProgram {
             utProjF.Normalize();
             var f = F - Ut.Dot(F) * Ut;
             f.Normalize();
-            var cosYaw = Ft.Dot(f);
             var pitchCos = Ut.Dot(F);
             pitchAngle = Math.PI / 2 - Math.Acos(pitchCos);
-            yawAngle = Math.Atan2(f.Dot(Rt), cosYaw);
-            /*yawAngle = Math.Atan2(cosYaw, f.Dot(Rt));
-            yawAngle += Math.PI; if (yawAngle > Math.PI) yawAngle -= 2 * Math.PI;
-            */
-            yawAngle = 1.0f * yawAngle;
+            yawAngle = Math.PI / 2 - Math.Atan2(f.Dot(Ft), f.Dot(Rt));
             rollAngle = Math.Atan2(utProjF.Dot(R), utProjF.Dot(U));
 
             targetDelta = Vector3D.Rotate(targetVec, worldToShipMat);
@@ -211,25 +211,18 @@ class Program : MyGridProgram {
         str += vectorToString(metrics.shipWorldMatrix.Forward);
         str += vectorToString(metrics.shipWorldMatrix.Up);
         */
+        str += "SHIP FWD - TGT FWD\n";
+        str += vectorToString(metrics.shipWorldMatrix.Forward) + vectorToString(metrics.targetWorldMatrix.Forward);
+
         str += "PITCH - YAW - ROLL\n";
-        str += (metrics.pitchAngle*180.0/Math.PI).ToString("0.000");
-        str += "\n";
-        str += (metrics.yawAngle * 180.0 / Math.PI).ToString("0.000");
-        str += "\n";
-        str += (metrics.rollAngle * 180.0 / Math.PI).ToString("0.000");
-        str += "\n";
+        str += (metrics.pitchAngle*180.0/Math.PI).ToString("0.000"); str += "\n";
+        str += (metrics.yawAngle * 180.0 / Math.PI).ToString("0.000"); str += "\n";
+        str += (metrics.rollAngle * 180.0 / Math.PI).ToString("0.000"); str += "\n";
 
-        str += "tgt " + vectorToString(metrics.targetDelta);
-        str += "\n";
-
-        str += "vLoc " + vectorToString(metrics.shipVelLocal);
-        str += "\n";
-
-        str += "vCtrlTgt " + vectorToString(_lastVControl);
-        str += "\n";
-
-        str += "vCtrl " + vectorToString(_lastVControl_pid);
-        str += "\n";
+        str += "tgtDelta " + vectorToString(metrics.targetDelta); //str += "\n";
+        str += "velLocal " + vectorToString(metrics.shipVelLocal); //str += "\n";
+        str += "vCtrlTgt " + vectorToString(_lastVControl); //str += "\n";
+        str += "vCtrl " + vectorToString(_lastVControl_pid); //str += "\n";
 
         str += "RL0: " + _r0Name + ", " + _l0Name + "\n";
         str += "UD0: " + _u0Name + ", " + _d0Name + "\n";
@@ -298,7 +291,7 @@ class Program : MyGridProgram {
         pidPitch.update(metrics.pitchAngle, 0.0);
         pidRoll.update(metrics.rollAngle, 0.0);
 
-        gyro.Yaw = (float)pidYaw.control * -1.0f;
+        gyro.Yaw = (float)pidYaw.control;
         gyro.Pitch = (float)pidPitch.control;
         gyro.Roll = (float)pidRoll.control;
 
