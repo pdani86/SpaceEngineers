@@ -66,17 +66,21 @@ class Program : MyGridProgram {
         pidPitch.kI = 0.0f;
         pidYaw.kI = 0.0f;
 
-        pidFwd.integTrim = 1.0f;
-        pidRight.integTrim = 1.0f;
-        pidUp.integTrim = 1.0f;
+        float pidThruster_kI = 1.0f;
+        float pidThruster_integTrim = 1.0f;
+        float pidThruster_kD = 0.1f;
 
-        pidFwd.kI = 0.05f;
-        pidRight.kI = 0.05f;
-        pidUp.kI = 0.05f;
+        pidFwd.integTrim = pidThruster_integTrim;
+        pidRight.integTrim = pidThruster_integTrim;
+        pidUp.integTrim = pidThruster_integTrim;
 
-        pidFwd.kD = 0.01f;
-        pidRight.kD = 0.01f;
-        pidUp.kD = 0.01f;
+        pidFwd.kI = pidThruster_kI;
+        pidRight.kI = pidThruster_kI;
+        pidUp.kI = pidThruster_kI;
+
+        pidFwd.kD = pidThruster_kD;
+        pidRight.kD = pidThruster_kD;
+        pidUp.kD = pidThruster_kD;
 
 
         List<IMyTextPanel> lcd_list = new List<IMyTextPanel>();
@@ -185,6 +189,7 @@ class Program : MyGridProgram {
         }
 
         public float shipMass;
+        
         public Vector3D worldShipPos;
         public Vector3D worldTargetPos;
         public MatrixD shipWorldMatrix;
@@ -241,6 +246,10 @@ class Program : MyGridProgram {
         str += "vCtrlTgt " + vectorToString(_lastVControl); //str += "\n";
         str += "vCtrl " + vectorToString(_lastVControl_pid); //str += "\n";
 
+        str += "maxVel: " + vectorToString(_lastStoppingVmax);
+        str += "maxAcc: " + _lastMaxAcc.ToString("0.000") + "\n";
+        
+
         //str += "RL0: " + _r0Name + ", " + _l0Name + "\n";
         //str += "UD0: " + _u0Name + ", " + _d0Name + "\n";
         //str += "th " + thrusters.Count + " | " + thrustersF.Count + "," + thrustersB.Count + "," + thrustersR.Count + "," + thrustersL.Count + "," + thrustersU.Count + "," + thrustersD.Count;
@@ -287,6 +296,21 @@ class Program : MyGridProgram {
         //program.Main("", UpdateType.Update1);
     }
 
+
+    double getStoppingVmaxForMaxAcc(double maxAcc, double dist)
+    {
+        return (float)Math.Sqrt((2*maxAcc)/ Math.Abs(dist));
+    }
+
+    Vector3D getStoppingVmaxForMaxAcc(double maxAcc, Vector3D dist)
+    {
+        return new Vector3D(
+            getStoppingVmaxForMaxAcc(maxAcc, dist.X),
+            getStoppingVmaxForMaxAcc(maxAcc, dist.Y),
+            getStoppingVmaxForMaxAcc(maxAcc, dist.Z)
+            );
+    }
+
     public void Main(string argument, UpdateType updateSource)
     {
         Vector3D halfBlockFWD = connector.WorldMatrix.Forward * 1.25;
@@ -331,6 +355,18 @@ class Program : MyGridProgram {
             return;
         }
 
+        float minThrust = thrusters[0].MaxEffectiveThrust;
+        foreach (var thruster in thrusters)
+        {
+            var thrust = thruster.MaxEffectiveThrust;
+            if (thrust < minThrust) minThrust = thrust;
+        }
+        float maxAcc = minThrust / metrics.shipMass;
+        _lastMaxAcc = maxAcc;
+
+        var stoppingVmax = getStoppingVmaxForMaxAcc(maxAcc, metrics.targetDelta);
+        _lastStoppingVmax = stoppingVmax;
+
         double alignmentThreshold = 0.05;
         bool xAlignmentOk = (Math.Abs(metrics.targetDelta.X) < alignmentThreshold);
         bool yAlignmentOk = (Math.Abs(metrics.targetDelta.Y) < alignmentThreshold);
@@ -340,15 +376,14 @@ class Program : MyGridProgram {
         float signY = yAlignmentOk ? 0.0f : ((metrics.targetDelta.Y < 0.0f) ? (-1.0f) : (1.0f));
         _lastAlignmentOk = alignmentOk;
         if (!alignmentOk) {
-            
-            float alignVelX = (Math.Abs(metrics.targetDelta.X) < 1.0) ? 0.05f : 1.0f;
-            float alignVelY = (Math.Abs(metrics.targetDelta.Y) < 1.0) ? 0.05f : 1.0f;
+            float alignVelX = (Math.Abs(metrics.targetDelta.X) < 1.0) ? 0.05f : (float)stoppingVmax.X;
+            float alignVelY = (Math.Abs(metrics.targetDelta.Y) < 1.0) ? 0.05f : (float)stoppingVmax.Y;
 
             Vector3D v = new Vector3D(alignVelX * signX, alignVelY * signY, 0.0f);
             _lastVControl = v;
-            controlLocalVel(metrics, v);
+            controlLocalVel(metrics, v, 1.0f);
         } else {
-
+            //controlLocalVel(metrics, new Vector3D(0.0, 0.0, ));
         }
     }
 
@@ -356,6 +391,8 @@ class Program : MyGridProgram {
     Vector3D _lastVControl_pid = new Vector3D();
     bool _lastAlignmentOk = false;
     bool _lastOrientOk = false;
+    float _lastMaxAcc = 0.0f;
+    Vector3D _lastStoppingVmax = new Vector3D();
     string _r0Name = "";
     string _l0Name = "";
     string _u0Name = "";
