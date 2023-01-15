@@ -10,30 +10,6 @@ using VRage.Game;
 using VRage.Library;
 using VRageMath;
 using VRage.Game.ModAPI.Ingame;
-//using System.Security.Cryptography.X509Certificates;
-//using static Sandbox.Common.ObjectBuilders.Definitions.MyObjectBuilder_ParachuteDefinition.Opening;
-//using Sandbox.ModAPI;
-
-
-/*
-void getOrientationVectors(out  Vector3D F, out Vector3D U, out Vector3D R) {
-	F = rc.WorldMatrix.Forward;
-	R = rc.WorldMatrix.Right;
-	U = rc.WorldMatrix.Up;
-}
-
-
-void getRollPitch(out double roll, out double pitch,Vector3D vRef) {
-	Vector3D F,U,R;
-	getOrientationVectors(out F,out U,out R);
-	vRef.Normalize();
-
-	double cosFG = F.Dot(vRef);
-	double cosRG = R.Dot(vRef);
-	pitch = Math.PI/2.0 - Math.Acos(cosFG);
-	roll = Math.PI/2.0 - Math.Acos(cosRG);
-}
-*/
 
 class Program : MyGridProgram {
 
@@ -79,8 +55,25 @@ class Program : MyGridProgram {
 
     public Program()
     {
-
         Runtime.UpdateFrequency = UpdateFrequency.Update1;
+
+        pidRoll.kI = 0.0f;
+        pidPitch.kI = 0.0f;
+        pidYaw.kI = 0.0f;
+
+        pidFwd.integTrim = 1.0f;
+        pidRight.integTrim = 1.0f;
+        pidUp.integTrim = 1.0f;
+
+        pidFwd.kI = 0.05f;
+        pidRight.kI = 0.05f;
+        pidUp.kI = 0.05f;
+
+        pidFwd.kD = 0.01f;
+        pidRight.kD = 0.01f;
+        pidUp.kD = 0.01f;
+
+
         List<IMyTextPanel> lcd_list = new List<IMyTextPanel>();
         List<IMyShipConnector> connector_list = new List<IMyShipConnector>();
         List<IMyRemoteControl> rc_list = new List<IMyRemoteControl>();
@@ -95,36 +88,48 @@ class Program : MyGridProgram {
         connector = connector_list[0];
         rc = rc_list[0];
         gyro = gyro_list[0];
-
-        int ix = 0;
+        
+        
         foreach(var thruster in thrusters)
         {
             //thruster.Orientation
             //thruster.ThrustOverride
             //MyAPIGateway.Utilities.ShowMessage("S ", "dir"+(int)thruster.Orientation.Forward);
-            ++ix;
-            switch (thruster.Orientation.Forward)
+            var thrustOrient = Base6Directions.GetOppositeDirection(thruster.Orientation.Forward);
+            var rcF = rc.Orientation.Forward;
+            var rcU = rc.Orientation.Up;
+            var rcB = Base6Directions.GetOppositeDirection(rcF);
+            var rcL = Base6Directions.GetLeft(rcU, rcF);
+            var rcR = Base6Directions.GetOppositeDirection(rcL);
+            var rcD = Base6Directions.GetOppositeDirection(rcU);
+            if (thrustOrient == rcF)
             {
-                case Base6Directions.Direction.Forward:
-                    thrustersF.Add(thruster);
-                    break;
-                case Base6Directions.Direction.Backward:
-                    thrustersB.Add(thruster);
-                    break;
-                case Base6Directions.Direction.Up:
-                    thrustersU.Add(thruster);
-                    break;
-                case Base6Directions.Direction.Down:
-                    thrustersD.Add(thruster);
-                    break;
-                case Base6Directions.Direction.Right:
-                    thrustersR.Add(thruster);
-                    break;
-                case Base6Directions.Direction.Left:
-                    thrustersL.Add(thruster);
-                    break;
+                thrustersF.Add(thruster);
+            } else if(thrustOrient == rcB) {
+                thrustersB.Add(thruster);
+            }
+            else if (thrustOrient == rcR)
+            {
+                thrustersR.Add(thruster);
+            }
+            else if (thrustOrient == rcL)
+            {
+                thrustersL.Add(thruster);
+            }
+            else if (thrustOrient == rcU)
+            {
+                thrustersU.Add(thruster);
+            }
+            else if (thrustOrient == rcD)
+            {
+                thrustersD.Add(thruster);
             }
         }
+
+        _r0Name = thrustersR[0].CustomName;
+        _l0Name = thrustersL[0].CustomName;
+        _u0Name = thrustersU[0].CustomName;
+        _d0Name = thrustersD[0].CustomName;
     }
 
     struct Metrics
@@ -138,8 +143,10 @@ class Program : MyGridProgram {
             var curPos = rc.GetPosition();
             */
             shipWorldMatrix = rc.WorldMatrix;
-
             targetWorldMatrix = targetSystem;
+
+            var worldToShipMat = Matrix.Invert(shipWorldMatrix);
+            var worldToTargetMat = Matrix.Invert(targetWorldMatrix);
 
             var F = shipWorldMatrix.Forward;
             var R = shipWorldMatrix.Right;
@@ -167,10 +174,10 @@ class Program : MyGridProgram {
             */
             yawAngle = 1.0f * yawAngle;
             rollAngle = Math.Atan2(utProjF.Dot(R), utProjF.Dot(U));
-            targetDelta = Vector3D.Rotate(targetVec, rc.WorldMatrix);
 
+            targetDelta = Vector3D.Rotate(targetVec, worldToShipMat);
             shipVelWorld = rc.GetShipVelocities().LinearVelocity;
-            shipVelLocal = Vector3D.Rotate(shipVelWorld, rc.WorldMatrix);
+            shipVelLocal = Vector3D.Rotate(shipVelWorld, worldToShipMat);
         }
 
         public Vector3D worldShipPos;
@@ -214,8 +221,17 @@ class Program : MyGridProgram {
         str += "vLoc " + vectorToString(metrics.shipVelLocal);
         str += "\n";
 
-        str += "th " + thrusters.Count + " | " + thrustersF.Count + "," + thrustersB.Count + "," + thrustersR.Count + "," + thrustersL.Count + "," + thrustersU.Count + "," + thrustersD.Count;
+        str += "vCtrlTgt " + vectorToString(_lastVControl);
         str += "\n";
+
+        str += "vCtrl " + vectorToString(_lastVControl_pid);
+        str += "\n";
+
+        str += "RL0: " + _r0Name + ", " + _l0Name + "\n";
+        str += "UD0: " + _u0Name + ", " + _d0Name + "\n";
+
+        //str += "th " + thrusters.Count + " | " + thrustersF.Count + "," + thrustersB.Count + "," + thrustersR.Count + "," + thrustersL.Count + "," + thrustersU.Count + "," + thrustersD.Count;
+        //str += "\n";
         lcd.WriteText(str);
     }
 
@@ -227,7 +243,7 @@ class Program : MyGridProgram {
         }
     }
 
-    void controlLocalVel(Metrics metrics, Vector3D vel)
+    void controlLocalVel(Metrics metrics, Vector3D vel, float maxPerc = 0.02f)
     {
         var fwd = pidFwd.update(metrics.shipVelLocal.Z, vel.Z);
         var right = pidRight.update(metrics.shipVelLocal.X, vel.X);
@@ -238,11 +254,22 @@ class Program : MyGridProgram {
         setThrustersPercentage(thrustersR, 0.0f);
         setThrustersPercentage(thrustersL, 0.0f);
 
-        List<IMyThrust> thrustersLRToSet = (right > 0.0) ? (thrustersR) : (thrustersL);
-        List<IMyThrust> thrustersUDToSet = (up < 0.0) ? (thrustersU) : (thrustersD);
+        _lastVControl_pid.X = right;
+        _lastVControl_pid.Y = up;
 
+        List<IMyThrust> thrustersLRToSet = (right > 0.0) ? (thrustersR) : (thrustersL);
+        List<IMyThrust> thrustersUDToSet = (up > 0.0) ? (thrustersU) : (thrustersD);
+
+        right = trim(right, maxPerc);
+        up = trim(up, maxPerc);
         setThrustersPercentage(thrustersLRToSet, (float)Math.Abs(right));
         setThrustersPercentage(thrustersUDToSet, (float)Math.Abs(up));
+    }
+
+    public static void Main()
+    {
+        var program = new Program();
+        //program.Main("", UpdateType.Update1);
     }
 
     public void Main(string argument, UpdateType updateSource)
@@ -280,28 +307,25 @@ class Program : MyGridProgram {
         bool yAlignmentOk = (Math.Abs(metrics.targetDelta.Y) < alignmentThreshold);
         bool alignmentOk = xAlignmentOk && yAlignmentOk;
 
-        if(!alignmentOk) {
-            float signX = xAlignmentOk ? 0.0f : ((metrics.targetDelta.X < 0.0f) ? (-1.0f) : (1.0f));
-            float signY = yAlignmentOk ? 0.0f : ((metrics.targetDelta.Y < 0.0f) ? (-1.0f) : (1.0f));
-            signX = -1.0f * signX;
-            signY = -1.0f * signY;
+        float signX = xAlignmentOk ? 0.0f : ((metrics.targetDelta.X < 0.0f) ? (-1.0f) : (1.0f));
+        float signY = yAlignmentOk ? 0.0f : ((metrics.targetDelta.Y < 0.0f) ? (-1.0f) : (1.0f));
+
+        if (!alignmentOk) {
             const float alignVel = 0.05f;
             Vector3D v = new Vector3D(alignVel * signX, alignVel * signY, 0.0f);
-            //v = v * -1.0f;
-            //controlLocalVel(metrics, v);
-            //lcd.WriteText(/*lcd.GetText() + */"cvel: " + vectorToString(v));
-
+            _lastVControl = v;
+            controlLocalVel(metrics, v);
         } else {
 
         }
-
-
-        // var cross = targetDir.Cross(connector.WorldMatrix.Forward);
-
-        //gyro.GyroOverride;
-        //gyro.GyroPower;
     }
 
+    Vector3D _lastVControl = new Vector3D();
+    Vector3D _lastVControl_pid = new Vector3D();
+    string _r0Name = "";
+    string _l0Name = "";
+    string _u0Name = "";
+    string _d0Name = "";
 
     IMyTextPanel lcd = null;
     IMyShipConnector connector = null;
