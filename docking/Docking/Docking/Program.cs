@@ -134,7 +134,7 @@ class Program : MyGridProgram {
 
     struct Metrics
     {
-        public Metrics(IMyRemoteControl rc, Vector3D connectorPos, MatrixD targetSystem, Vector3D targetPos)
+        public Metrics(IMyRemoteControl rc, Vector3D connectorPos, MatrixD targetSystem /*, Vector3D targetPos*/)
         {
             /*
             var v_av = rc.GetShipVelocities();
@@ -142,6 +142,10 @@ class Program : MyGridProgram {
             var curSpeed = v.Length();
             var curPos = rc.GetPosition();
             */
+
+            
+            var targetPos = targetSystem.Translation;
+
             shipWorldMatrix = rc.WorldMatrix;
             targetWorldMatrix = targetSystem;
 
@@ -168,7 +172,7 @@ class Program : MyGridProgram {
             var cosYaw = Ft.Dot(f);
             var pitchCos = Ut.Dot(F);
             pitchAngle = Math.PI / 2 - Math.Acos(pitchCos);
-            yawAngle = Math.Atan2(cosYaw, f.Dot(Rt));
+            yawAngle = Math.Atan2(f.Dot(Rt), cosYaw);
             /*yawAngle = Math.Atan2(cosYaw, f.Dot(Rt));
             yawAngle += Math.PI; if (yawAngle > Math.PI) yawAngle -= 2 * Math.PI;
             */
@@ -243,6 +247,8 @@ class Program : MyGridProgram {
         }
     }
 
+    
+
     void controlLocalVel(Metrics metrics, Vector3D vel, float maxPerc = 0.02f)
     {
         var fwd = pidFwd.update(metrics.shipVelLocal.Z, vel.Z);
@@ -276,7 +282,15 @@ class Program : MyGridProgram {
     {
         Vector3D halfBlockFWD = connector.WorldMatrix.Forward * 1.25;
         var connectorPos = connector.GetPosition() + halfBlockFWD;
-        var metrics = new Metrics(rc, connectorPos, MatrixD.Identity, Vector3D.Zero);
+        MatrixD targetSystem = MatrixD.Identity;
+
+        targetSystem.Right = new Vector3D(0.75, -0.25, 0.61);
+        targetSystem.Up = new Vector3D(-0.22, 0.77, 0.59);
+        targetSystem.Forward = new Vector3D(0.62, 0.58, -0.53);
+        //targetSystem.Translation = new Vector3D(-32.60, 66.82, -62.67);
+        targetSystem.Translation = new Vector3D(-32.60, 66.82, -62.67) + targetSystem.Forward * -1.25;
+
+        var metrics = new Metrics(rc, connectorPos, targetSystem);
 
         updateLcd(metrics);
 
@@ -311,8 +325,11 @@ class Program : MyGridProgram {
         float signY = yAlignmentOk ? 0.0f : ((metrics.targetDelta.Y < 0.0f) ? (-1.0f) : (1.0f));
 
         if (!alignmentOk) {
-            const float alignVel = 0.05f;
-            Vector3D v = new Vector3D(alignVel * signX, alignVel * signY, 0.0f);
+            
+            float alignVelX = (Math.Abs(metrics.targetDelta.X) < 1.0) ? 0.05f : 1.0f;
+            float alignVelY = (Math.Abs(metrics.targetDelta.Y) < 1.0) ? 0.05f : 1.0f;
+
+            Vector3D v = new Vector3D(alignVelX * signX, alignVelY * signY, 0.0f);
             _lastVControl = v;
             controlLocalVel(metrics, v);
         } else {
