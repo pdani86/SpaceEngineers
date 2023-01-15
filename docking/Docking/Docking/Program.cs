@@ -147,7 +147,7 @@ class Program : MyGridProgram {
             var curSpeed = v.Length();
             var curPos = rc.GetPosition();
             */
-
+            shipMass = rc.CalculateShipMass().PhysicalMass;
             
             var targetPos = targetSystem.Translation;
 
@@ -184,6 +184,7 @@ class Program : MyGridProgram {
             shipVelLocal = Vector3D.Rotate(shipVelWorld, worldToShipMat);
         }
 
+        public float shipMass;
         public Vector3D worldShipPos;
         public Vector3D worldTargetPos;
         public MatrixD shipWorldMatrix;
@@ -205,6 +206,20 @@ class Program : MyGridProgram {
     void updateLcd(Metrics metrics)
     {
         string str = "";
+
+        if(_lastOrientOk)
+        {
+            str += "ORIENTED ";
+        }
+        if (_lastAlignmentOk)
+        {
+            str += "ALIGNED ";   
+        }
+        if (connector.Status == MyShipConnectorStatus.Connectable)
+        {
+            str += "CONNECTABLE ";
+        }
+        str += "\n";
         /*str += "POS\n";
         str += vectorToString(metrics.worldShipPos);
         str += "FORWARD - UP\n";
@@ -213,10 +228,12 @@ class Program : MyGridProgram {
         */
         str += "SHIP FWD - TGT FWD\n";
         str += vectorToString(metrics.shipWorldMatrix.Forward) + vectorToString(metrics.targetWorldMatrix.Forward);
+        str += "SHIP UP - TGT UP\n";
+        str += vectorToString(metrics.shipWorldMatrix.Up) + vectorToString(metrics.targetWorldMatrix.Up);
 
         str += "PITCH - YAW - ROLL\n";
-        str += (metrics.pitchAngle*180.0/Math.PI).ToString("0.000"); str += "\n";
-        str += (metrics.yawAngle * 180.0 / Math.PI).ToString("0.000"); str += "\n";
+        str += (metrics.pitchAngle*180.0/Math.PI).ToString("0.000"); str += ", ";
+        str += (metrics.yawAngle * 180.0 / Math.PI).ToString("0.000"); str += ", ";
         str += (metrics.rollAngle * 180.0 / Math.PI).ToString("0.000"); str += "\n";
 
         str += "tgtDelta " + vectorToString(metrics.targetDelta); //str += "\n";
@@ -224,9 +241,8 @@ class Program : MyGridProgram {
         str += "vCtrlTgt " + vectorToString(_lastVControl); //str += "\n";
         str += "vCtrl " + vectorToString(_lastVControl_pid); //str += "\n";
 
-        str += "RL0: " + _r0Name + ", " + _l0Name + "\n";
-        str += "UD0: " + _u0Name + ", " + _d0Name + "\n";
-
+        //str += "RL0: " + _r0Name + ", " + _l0Name + "\n";
+        //str += "UD0: " + _u0Name + ", " + _d0Name + "\n";
         //str += "th " + thrusters.Count + " | " + thrustersF.Count + "," + thrustersB.Count + "," + thrustersR.Count + "," + thrustersL.Count + "," + thrustersU.Count + "," + thrustersD.Count;
         //str += "\n";
         lcd.WriteText(str);
@@ -277,11 +293,16 @@ class Program : MyGridProgram {
         var connectorPos = connector.GetPosition() + halfBlockFWD;
         MatrixD targetSystem = MatrixD.Identity;
 
-        targetSystem.Right = new Vector3D(0.75, -0.25, 0.61);
-        targetSystem.Up = new Vector3D(-0.22, 0.77, 0.59);
+        //targetSystem.Right = new Vector3D(0.75, -0.25, 0.61);
+        //targetSystem.Up = new Vector3D(-0.22, 0.77, 0.59);
+
+        targetSystem.Right = new Vector3D(-0.75, 0.25, -0.61);
+        targetSystem.Up = new Vector3D(0.22, -0.77, -0.59);
+
         targetSystem.Forward = new Vector3D(0.62, 0.58, -0.53);
         //targetSystem.Translation = new Vector3D(-32.60, 66.82, -62.67);
-        targetSystem.Translation = new Vector3D(-32.60, 66.82, -62.67) + targetSystem.Forward * -1.25;
+        double connSafetyMargin = 0.2;
+        targetSystem.Translation = new Vector3D(-32.60, 66.82, -62.67) + targetSystem.Forward * -1.0 * (1.25 + connSafetyMargin);
 
         var metrics = new Metrics(rc, connectorPos, targetSystem);
 
@@ -300,7 +321,8 @@ class Program : MyGridProgram {
             (Math.Abs(metrics.rollAngle) < angleThreshold) &&
             (Math.Abs(metrics.pitchAngle) < angleThreshold) &&
             (Math.Abs(metrics.yawAngle) < angleThreshold);
-        if(orientationOk)
+        _lastOrientOk = orientationOk;
+        if (orientationOk)
         {
             gyro.Yaw = 0.0f;
             gyro.Roll = 0.0f;
@@ -316,7 +338,7 @@ class Program : MyGridProgram {
 
         float signX = xAlignmentOk ? 0.0f : ((metrics.targetDelta.X < 0.0f) ? (-1.0f) : (1.0f));
         float signY = yAlignmentOk ? 0.0f : ((metrics.targetDelta.Y < 0.0f) ? (-1.0f) : (1.0f));
-
+        _lastAlignmentOk = alignmentOk;
         if (!alignmentOk) {
             
             float alignVelX = (Math.Abs(metrics.targetDelta.X) < 1.0) ? 0.05f : 1.0f;
@@ -332,6 +354,8 @@ class Program : MyGridProgram {
 
     Vector3D _lastVControl = new Vector3D();
     Vector3D _lastVControl_pid = new Vector3D();
+    bool _lastAlignmentOk = false;
+    bool _lastOrientOk = false;
     string _r0Name = "";
     string _l0Name = "";
     string _u0Name = "";
