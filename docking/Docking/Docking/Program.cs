@@ -40,6 +40,24 @@ class Program : MyGridProgram {
             return control;
         }
     };
+    /*
+    class PositionControl
+    {
+        void update(Vector3D worldCoordTarget, double dt) { }
+    };
+
+    class OrientationControl
+    {
+        void update(Vector3D rpyTarget, double dt) { }
+    };
+
+    class ManeuverControl
+    {
+        PositionControl positionControl;
+        OrientationControl orientationControl;
+
+        void update(Vector3D posTarget, Vector3D rpyTarget, double dt) { }
+    }*/
 
     double trim(double val, double th) { if (val < -th) return -th; if (val > th) return th; return val; }
 
@@ -140,6 +158,70 @@ class Program : MyGridProgram {
         _u0Name = thrustersU[0].CustomName;
         _d0Name = thrustersD[0].CustomName;
     }
+
+    class ManeuverThrusters
+    {
+        void collectManeuverThrusters(IMyRemoteControl rc, List<IMyThrust> thrusters)
+        {
+            foreach (var thruster in thrusters)
+            {
+                var thrustOrient = Base6Directions.GetOppositeDirection(thruster.Orientation.Forward);
+                var rcF = rc.Orientation.Forward;
+                var rcU = rc.Orientation.Up;
+                var rcB = Base6Directions.GetOppositeDirection(rcF);
+                var rcL = Base6Directions.GetLeft(rcU, rcF);
+                var rcR = Base6Directions.GetOppositeDirection(rcL);
+                var rcD = Base6Directions.GetOppositeDirection(rcU);
+                if (thrustOrient == rcF)
+                {
+                    thrustersF.Add(thruster);
+                }
+                else if (thrustOrient == rcB)
+                {
+                    thrustersB.Add(thruster);
+                }
+                else if (thrustOrient == rcR)
+                {
+                    thrustersR.Add(thruster);
+                }
+                else if (thrustOrient == rcL)
+                {
+                    thrustersL.Add(thruster);
+                }
+                else if (thrustOrient == rcU)
+                {
+                    thrustersU.Add(thruster);
+                }
+                else if (thrustOrient == rcD)
+                {
+                    thrustersD.Add(thruster);
+                }
+
+            }
+        }
+
+        static double getStoppingVmaxForMaxAcc(double maxAcc, double dist)
+        {
+            return (float)Math.Sqrt((2 * maxAcc) / Math.Abs(dist));
+        }
+
+        static void setThrustersPercentage(List<IMyThrust> list, float perc)
+        {
+            foreach (var thruster in list)
+            {
+                thruster.ThrustOverridePercentage = perc;
+            }
+        }
+
+        //List<IMyThrust> thrusters = new List<IMyThrust>();
+        List<IMyThrust> thrustersF = new List<IMyThrust>();
+        List<IMyThrust> thrustersB = new List<IMyThrust>();
+        List<IMyThrust> thrustersU = new List<IMyThrust>();
+        List<IMyThrust> thrustersD = new List<IMyThrust>();
+        List<IMyThrust> thrustersR = new List<IMyThrust>();
+        List<IMyThrust> thrustersL = new List<IMyThrust>();
+        
+    };
 
     struct Metrics
     {
@@ -301,6 +383,16 @@ class Program : MyGridProgram {
     {
         return (float)Math.Sqrt((2*maxAcc)/ Math.Abs(dist));
     }
+    /*
+    double getStoppingWmaxForMaxAngAcc(double maxAngAcc, double deltaAngle)
+    {
+        return getStoppingVmaxForMaxAcc(maxAngAcc, deltaAngle);
+    }
+
+    double getWorstAngularAcc()
+    {
+        return 1.0;
+    }*/
 
     Vector3D getStoppingVmaxForMaxAcc(double maxAcc, Vector3D dist)
     {
@@ -410,9 +502,11 @@ class Program : MyGridProgram {
     List<IMyThrust> thrustersL = new List<IMyThrust>();
     IMyGyro gyro = null;
     
+
     PID_Control pidRoll = new PID_Control();
     PID_Control pidPitch = new PID_Control();
     PID_Control pidYaw = new PID_Control();
+
     PID_Control pidFwd = new PID_Control();
     PID_Control pidRight = new PID_Control();
     PID_Control pidUp = new PID_Control();
