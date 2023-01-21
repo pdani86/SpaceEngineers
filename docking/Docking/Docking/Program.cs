@@ -10,6 +10,7 @@ using VRage.Game;
 using VRage.Library;
 using VRageMath;
 using VRage.Game.ModAPI.Ingame;
+using static Sandbox.Game.Entities.MyEntityCycling;
 
 class Program : MyGridProgram {
 
@@ -59,7 +60,7 @@ class Program : MyGridProgram {
         void update(Vector3D posTarget, Vector3D rpyTarget, double dt) { }
     }*/
 
-    double trim(double val, double th) { if (val < -th) return -th; if (val > th) return th; return val; }
+    static double trim(double val, double th) { if (val < -th) return -th; if (val > th) return th; return val; }
 
     string vectorToString(Vector3D v)
     {
@@ -88,19 +89,6 @@ class Program : MyGridProgram {
         float pidThruster_integTrim = 1.0f;
         float pidThruster_kD = 0.1f;
 
-        pidFwd.integTrim = pidThruster_integTrim;
-        pidRight.integTrim = pidThruster_integTrim;
-        pidUp.integTrim = pidThruster_integTrim;
-
-        pidFwd.kI = pidThruster_kI;
-        pidRight.kI = pidThruster_kI;
-        pidUp.kI = pidThruster_kI;
-
-        pidFwd.kD = pidThruster_kD;
-        pidRight.kD = pidThruster_kD;
-        pidUp.kD = pidThruster_kD;
-
-
         List<IMyTextPanel> lcd_list = new List<IMyTextPanel>();
         List<IMyShipConnector> connector_list = new List<IMyShipConnector>();
         List<IMyRemoteControl> rc_list = new List<IMyRemoteControl>();
@@ -115,54 +103,17 @@ class Program : MyGridProgram {
         connector = connector_list[0];
         rc = rc_list[0];
         gyro = gyro_list[0];
-        
-        
-        foreach(var thruster in thrusters)
-        {
-            //thruster.Orientation
-            //thruster.ThrustOverride
-            //MyAPIGateway.Utilities.ShowMessage("S ", "dir"+(int)thruster.Orientation.Forward);
-            var thrustOrient = Base6Directions.GetOppositeDirection(thruster.Orientation.Forward);
-            var rcF = rc.Orientation.Forward;
-            var rcU = rc.Orientation.Up;
-            var rcB = Base6Directions.GetOppositeDirection(rcF);
-            var rcL = Base6Directions.GetLeft(rcU, rcF);
-            var rcR = Base6Directions.GetOppositeDirection(rcL);
-            var rcD = Base6Directions.GetOppositeDirection(rcU);
-            if (thrustOrient == rcF)
-            {
-                thrustersF.Add(thruster);
-            } else if(thrustOrient == rcB) {
-                thrustersB.Add(thruster);
-            }
-            else if (thrustOrient == rcR)
-            {
-                thrustersR.Add(thruster);
-            }
-            else if (thrustOrient == rcL)
-            {
-                thrustersL.Add(thruster);
-            }
-            else if (thrustOrient == rcU)
-            {
-                thrustersU.Add(thruster);
-            }
-            else if (thrustOrient == rcD)
-            {
-                thrustersD.Add(thruster);
-            }
-        }
 
-        _r0Name = thrustersR[0].CustomName;
-        _l0Name = thrustersL[0].CustomName;
-        _u0Name = thrustersU[0].CustomName;
-        _d0Name = thrustersD[0].CustomName;
+        maneuverThrusters = new ManeuverThrusters();
+        maneuverThrusters.collectManeuverThrusters(rc, thrusters);
     }
 
     class ManeuverThrusters
     {
-        void collectManeuverThrusters(IMyRemoteControl rc, List<IMyThrust> thrusters)
+        public void collectManeuverThrusters(IMyRemoteControl rc, List<IMyThrust> thrusters)
         {
+            this.thrusters = thrusters;
+
             foreach (var thruster in thrusters)
             {
                 var thrustOrient = Base6Directions.GetOppositeDirection(thruster.Orientation.Forward);
@@ -205,6 +156,15 @@ class Program : MyGridProgram {
             return (float)Math.Sqrt((2 * maxAcc) / Math.Abs(dist));
         }
 
+        Vector3D getStoppingVmaxForMaxAcc(double maxAcc, Vector3D dist)
+        {
+            return new Vector3D(
+                getStoppingVmaxForMaxAcc(maxAcc, dist.X),
+                getStoppingVmaxForMaxAcc(maxAcc, dist.Y),
+                getStoppingVmaxForMaxAcc(maxAcc, dist.Z)
+                );
+        }
+
         static void setThrustersPercentage(List<IMyThrust> list, float perc)
         {
             foreach (var thruster in list)
@@ -213,7 +173,71 @@ class Program : MyGridProgram {
             }
         }
 
-        //List<IMyThrust> thrusters = new List<IMyThrust>();
+        public void controlLocalVel(Vector3D velDiff, float maxPerc = 0.02f)
+        {
+            //var velDiff = targetVel - localVel;
+            var epsilon = 0.005f;
+
+            var fwd = 0.0f;
+            var right = velDiff.X;
+            var up = velDiff.Y;
+
+            setThrustersPercentage(thrustersU, 0.0f);
+            setThrustersPercentage(thrustersD, 0.0f);
+            setThrustersPercentage(thrustersR, 0.0f);
+            setThrustersPercentage(thrustersL, 0.0f);
+
+            //_lastVControl_pid.X = right;
+            //_lastVControl_pid.Y = up;
+
+            List<IMyThrust> thrustersLRToSet = (right > 0.0) ? (thrustersR) : (thrustersL);
+            List<IMyThrust> thrustersUDToSet = (up > 0.0) ? (thrustersU) : (thrustersD);
+
+            right = trim(right, maxPerc);
+            up = trim(up, maxPerc);
+            setThrustersPercentage(thrustersLRToSet, (float)Math.Abs(right));
+            setThrustersPercentage(thrustersUDToSet, (float)Math.Abs(up));
+        }
+
+        public bool controlPos(Vector3D targetDelta, Vector3D shipLocalVel, float shipMass)
+        {
+            float minThrust = thrusters[0].MaxEffectiveThrust;
+            foreach (var thruster in thrusters)
+            {
+                var thrust = thruster.MaxEffectiveThrust;
+                if (thrust < minThrust) minThrust = thrust;
+            }
+            float maxAcc = minThrust / shipMass;
+            //float maxAcc = maxStoppingAcc;
+            //_lastMaxAcc = maxAcc;
+
+            var stoppingVmax = getStoppingVmaxForMaxAcc(maxAcc, targetDelta);
+            //_lastStoppingVmax = stoppingVmax;
+
+            double alignmentThreshold = 0.05;
+            bool xAlignmentOk = (Math.Abs(targetDelta.X) < alignmentThreshold);
+            bool yAlignmentOk = (Math.Abs(targetDelta.Y) < alignmentThreshold);
+            bool alignmentOk = xAlignmentOk && yAlignmentOk;
+
+            float signX = xAlignmentOk ? 0.0f : ((targetDelta.X < 0.0f) ? (-1.0f) : (1.0f));
+            float signY = yAlignmentOk ? 0.0f : ((targetDelta.Y < 0.0f) ? (-1.0f) : (1.0f));
+            
+            if (!alignmentOk)
+            {
+                float alignVelX = (Math.Abs(targetDelta.X) < 1.0) ? 0.05f : (float)stoppingVmax.X;
+                float alignVelY = (Math.Abs(targetDelta.Y) < 1.0) ? 0.05f : (float)stoppingVmax.Y;
+
+                Vector3D v = new Vector3D(alignVelX * signX, alignVelY * signY, 0.0f);
+                controlLocalVel(v - shipLocalVel, 1.0f);
+            }
+            else
+            {
+                //controlLocalVel(metrics, new Vector3D(0.0, 0.0, ));
+            }
+            return alignmentOk;
+        }
+
+        List<IMyThrust> thrusters = new List<IMyThrust>();
         List<IMyThrust> thrustersF = new List<IMyThrust>();
         List<IMyThrust> thrustersB = new List<IMyThrust>();
         List<IMyThrust> thrustersU = new List<IMyThrust>();
@@ -325,8 +349,8 @@ class Program : MyGridProgram {
 
         str += "tgtDelta " + vectorToString(metrics.targetDelta); //str += "\n";
         str += "velLocal " + vectorToString(metrics.shipVelLocal); //str += "\n";
-        str += "vCtrlTgt " + vectorToString(_lastVControl); //str += "\n";
-        str += "vCtrl " + vectorToString(_lastVControl_pid); //str += "\n";
+        //str += "vCtrlTgt " + vectorToString(_lastVControl); //str += "\n";
+        //str += "vCtrl " + vectorToString(_lastVControl_pid); //str += "\n";
 
         str += "maxVel: " + vectorToString(_lastStoppingVmax);
         str += "maxAcc: " + _lastMaxAcc.ToString("0.000") + "\n";
@@ -347,43 +371,18 @@ class Program : MyGridProgram {
         }
     }
 
-    
-
-    void controlLocalVel(Metrics metrics, Vector3D vel, float maxPerc = 0.02f)
-    {
-        var fwd = pidFwd.update(metrics.shipVelLocal.Z, vel.Z);
-        var right = pidRight.update(metrics.shipVelLocal.X, vel.X);
-        var up = pidUp.update(metrics.shipVelLocal.Y, vel.Y);
-
-        setThrustersPercentage(thrustersU, 0.0f);
-        setThrustersPercentage(thrustersD, 0.0f);
-        setThrustersPercentage(thrustersR, 0.0f);
-        setThrustersPercentage(thrustersL, 0.0f);
-
-        _lastVControl_pid.X = right;
-        _lastVControl_pid.Y = up;
-
-        List<IMyThrust> thrustersLRToSet = (right > 0.0) ? (thrustersR) : (thrustersL);
-        List<IMyThrust> thrustersUDToSet = (up > 0.0) ? (thrustersU) : (thrustersD);
-
-        right = trim(right, maxPerc);
-        up = trim(up, maxPerc);
-        setThrustersPercentage(thrustersLRToSet, (float)Math.Abs(right));
-        setThrustersPercentage(thrustersUDToSet, (float)Math.Abs(up));
-    }
-
     public static void Main()
     {
         var program = new Program();
         //program.Main("", UpdateType.Update1);
     }
-
+    /*
 
     double getStoppingVmaxForMaxAcc(double maxAcc, double dist)
     {
         return (float)Math.Sqrt((2*maxAcc)/ Math.Abs(dist));
     }
-    /*
+    
     double getStoppingWmaxForMaxAngAcc(double maxAngAcc, double deltaAngle)
     {
         return getStoppingVmaxForMaxAcc(maxAngAcc, deltaAngle);
@@ -392,7 +391,7 @@ class Program : MyGridProgram {
     double getWorstAngularAcc()
     {
         return 1.0;
-    }*/
+    }
 
     Vector3D getStoppingVmaxForMaxAcc(double maxAcc, Vector3D dist)
     {
@@ -402,7 +401,7 @@ class Program : MyGridProgram {
             getStoppingVmaxForMaxAcc(maxAcc, dist.Z)
             );
     }
-
+    */
     public void Main(string argument, UpdateType updateSource)
     {
         Vector3D halfBlockFWD = connector.WorldMatrix.Forward * 1.25;
@@ -447,70 +446,26 @@ class Program : MyGridProgram {
             return;
         }
 
-        float minThrust = thrusters[0].MaxEffectiveThrust;
-        foreach (var thruster in thrusters)
-        {
-            var thrust = thruster.MaxEffectiveThrust;
-            if (thrust < minThrust) minThrust = thrust;
-        }
-        float maxAcc = minThrust / metrics.shipMass;
-        _lastMaxAcc = maxAcc;
-
-        var stoppingVmax = getStoppingVmaxForMaxAcc(maxAcc, metrics.targetDelta);
-        _lastStoppingVmax = stoppingVmax;
-
-        double alignmentThreshold = 0.05;
-        bool xAlignmentOk = (Math.Abs(metrics.targetDelta.X) < alignmentThreshold);
-        bool yAlignmentOk = (Math.Abs(metrics.targetDelta.Y) < alignmentThreshold);
-        bool alignmentOk = xAlignmentOk && yAlignmentOk;
-
-        float signX = xAlignmentOk ? 0.0f : ((metrics.targetDelta.X < 0.0f) ? (-1.0f) : (1.0f));
-        float signY = yAlignmentOk ? 0.0f : ((metrics.targetDelta.Y < 0.0f) ? (-1.0f) : (1.0f));
-        _lastAlignmentOk = alignmentOk;
-        if (!alignmentOk) {
-            float alignVelX = (Math.Abs(metrics.targetDelta.X) < 1.0) ? 0.05f : (float)stoppingVmax.X;
-            float alignVelY = (Math.Abs(metrics.targetDelta.Y) < 1.0) ? 0.05f : (float)stoppingVmax.Y;
-
-            Vector3D v = new Vector3D(alignVelX * signX, alignVelY * signY, 0.0f);
-            _lastVControl = v;
-            controlLocalVel(metrics, v, 1.0f);
-        } else {
-            //controlLocalVel(metrics, new Vector3D(0.0, 0.0, ));
-        }
+        _lastAlignmentOk = maneuverThrusters.controlPos(metrics.targetDelta, metrics.shipVelLocal, metrics.shipMass);
     }
 
-    Vector3D _lastVControl = new Vector3D();
-    Vector3D _lastVControl_pid = new Vector3D();
     bool _lastAlignmentOk = false;
     bool _lastOrientOk = false;
     float _lastMaxAcc = 0.0f;
     Vector3D _lastStoppingVmax = new Vector3D();
-    string _r0Name = "";
-    string _l0Name = "";
-    string _u0Name = "";
-    string _d0Name = "";
 
     IMyTextPanel lcd = null;
     IMyShipConnector connector = null;
     IMyRemoteControl rc = null;
+
     List<IMyThrust> thrusters = new List<IMyThrust>();
-    List<IMyThrust> thrustersF = new List<IMyThrust>();
-    List<IMyThrust> thrustersB = new List<IMyThrust>();
-    List<IMyThrust> thrustersU = new List<IMyThrust>();
-    List<IMyThrust> thrustersD = new List<IMyThrust>();
-    List<IMyThrust> thrustersR = new List<IMyThrust>();
-    List<IMyThrust> thrustersL = new List<IMyThrust>();
+
     IMyGyro gyro = null;
     
-
     PID_Control pidRoll = new PID_Control();
     PID_Control pidPitch = new PID_Control();
     PID_Control pidYaw = new PID_Control();
 
-    PID_Control pidFwd = new PID_Control();
-    PID_Control pidRight = new PID_Control();
-    PID_Control pidUp = new PID_Control();
-
-
+    ManeuverThrusters maneuverThrusters;
 }
 
